@@ -78,7 +78,7 @@ export async function convertPdfToImage(
     } catch (err) {
         return {
             imageUrl: "",
-            file: null,
+            file: file,
             error: `Failed to convert PDF: ${err}`,
         };
     }
