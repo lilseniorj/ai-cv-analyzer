@@ -7,6 +7,16 @@ import { convertPdfToImage } from '~/lib/pdf2img';
 import { generateUUID } from '~/lib/utils';
 import { prepareInstructions } from '../../constants';
 
+const getProgress = (statusText: string) => {
+  if (statusText.startsWith('Uploading the file')) return 10;
+  if (statusText.startsWith('Converting')) return 30;
+  if (statusText.startsWith('Uploading the image')) return 50;
+  if (statusText.startsWith('Preparing')) return 65;
+  if (statusText.startsWith('Analyzing')) return 80;
+  if (statusText.startsWith('Analysis complete')) return 100;
+  return 0;
+};
+
 const Upload = () => {
   const { auth, isLoading, fs, ai, kv } = usePuterStore();
   const navigate = useNavigate();
@@ -15,6 +25,11 @@ const Upload = () => {
   const [file, setFile] = useState<File | null>(null);
 
   const handleFileSelect = (file: File | null) => setFile(file);
+
+  const handleReset = () => {
+    setIsProcessing(false);
+    setStatusText('');
+  };
 
   const handleAnalyze = async ({ companyName, jobTitle, jobDescription, file }: { companyName: string, jobTitle: string, jobDescription: string, file: File }) => {
     setIsProcessing(true);
@@ -55,7 +70,17 @@ const Upload = () => {
       ? feedback.message.content
       : feedback.message.content[0].text;
 
-    data.feedback = JSON.parse(feedbackText);
+    const cleanText = feedbackText
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .trim();
+
+    try {
+      data.feedback = JSON.parse(cleanText);
+    } catch (e) {
+      return setStatusText('Error: Failed to parse AI response');
+    }
+
     await kv.set(`resume:${uuid}`, JSON.stringify(data));
     setStatusText('Analysis complete! Redirecting...');
     navigate(`/resume/${uuid}`);
@@ -75,20 +100,80 @@ const Upload = () => {
     handleAnalyze({ companyName, jobTitle, jobDescription, file });
   };
 
+  const progress = getProgress(statusText);
+  const isError = statusText.startsWith('Error');
+
   return (
     <main className="bg-[url('/images/bg-main.svg')] bg-cover">
       <Navbar />
       <section className="main-section">
         <div className="page-heading py-16">
           <h1>Smart feedback for your dream job</h1>
+
           {isProcessing ? (
-            <>
-              <h2>{statusText}</h2>
-              <img src="/images/resume-scan.gif" className="w-full" />
-            </>
+            <div className="flex flex-col items-center gap-6 mt-8 w-full max-w-md mx-auto">
+              {/* Error icon */}
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${
+                isError ? 'bg-red-50' : 'bg-transparent'
+              }`}>
+                {isError ? (
+                  <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <div className="w-12 h-12 rounded-full border-2 border-gray-200 border-t-blue-500 animate-spin" />
+                )}
+              </div>
+
+              {/* Status text */}
+              <div className="flex flex-col items-center gap-1">
+                <p className={`text-base font-medium text-center ${isError ? 'text-red-500' : 'text-gray-800'}`}>
+                  {statusText}
+                </p>
+                <p className="text-sm text-gray-400 text-center">
+                  {isError ? 'The analysis could not be completed' : "Please don't close this tab"}
+                </p>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full flex flex-col gap-3">
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div
+                    className={`h-1.5 rounded-full transition-all duration-700 ease-in-out ${
+                      isError ? 'bg-red-400' : 'bg-blue-500'
+                    }`}
+                    style={{ width: isError ? '50%' : `${progress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex flex-col items-center gap-3 w-full">
+                <button className="primary-button w-full" onClick={handleReset}>
+                  Try Again
+                </button>
+                {isError && (
+                  <button
+                    className="text-sm text-gray-400 hover:text-gray-600 underline transition-colors"
+                    onClick={() => navigate('/')}
+                  >
+                    Go back to home
+                  </button>
+                )}
+                {!isError && (
+                  <button
+                    className="text-sm text-gray-400 hover:text-gray-600 underline transition-colors"
+                    onClick={handleReset}
+                  >
+                    Cancel and try again
+                  </button>
+                )}
+              </div>
+            </div>
           ) : (
             <h2>Drop your resume for an ATS score and improvement tips</h2>
           )}
+
           {!isProcessing && (
             <form id="upload-form" onSubmit={handleSubmit} className="flex flex-col gap-4 mt-8">
               <div className="form-div">
